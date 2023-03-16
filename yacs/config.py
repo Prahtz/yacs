@@ -59,6 +59,7 @@ else:
 
 logger = logging.getLogger(__name__)
 
+_INTERNAL_STATE = ["__immutable__", "__deprecated_keys__", "__renamed_keys__", "__new_allowed__"]
 
 class CfgNode(dict):
     """
@@ -85,6 +86,8 @@ class CfgNode(dict):
         key_list = [] if key_list is None else key_list
         init_dict = self._create_config_tree_from_dict(init_dict, key_list)
         super(CfgNode, self).__init__(init_dict)
+        for k, v in init_dict.items():
+            super().__setattr__(k, v)
         # Manage if the CfgNode is frozen or not
         self.__dict__[CfgNode.IMMUTABLE] = False
         # Deprecated options
@@ -104,9 +107,13 @@ class CfgNode(dict):
             #     + "'foo:bar' -> ('foo', 'bar')"
             # ),
         }
-
+        
         # Allow new attributes after initialisation
         self.__dict__[CfgNode.NEW_ALLOWED] = new_allowed
+
+        for name in set(dir(self)) - set(dir(CfgNode)) - set(_INTERNAL_STATE):
+            value = self.__getattribute__(name)
+            self.__setattr__(name, value)
 
     @classmethod
     def _create_config_tree_from_dict(cls, dic, key_list):
@@ -123,7 +130,7 @@ class CfgNode(dict):
         for k, v in dic.items():
             if isinstance(v, dict):
                 # Convert dict to CfgNode
-                dic[k] = cls(v, key_list=key_list + [k])
+                dic[k] = CfgNode(v, key_list=key_list + [k])
             else:
                 # Check for valid leaf type or nested CfgNode
                 _assert_with_logging(
@@ -149,7 +156,7 @@ class CfgNode(dict):
             )
 
         _assert_with_logging(
-            name not in self.__dict__,
+            name not in _INTERNAL_STATE,
             "Invalid attempt to modify internal CfgNode state: {}".format(name),
         )
         _assert_with_logging(
@@ -160,6 +167,7 @@ class CfgNode(dict):
         )
 
         self[name] = value
+        super().__setattr__(name, value)
 
     def __str__(self):
         def _indent(s_, num_spaces):
@@ -202,7 +210,6 @@ class CfgNode(dict):
                 for k, v in cfg_dict.items():
                     cfg_dict[k] = convert_to_dict(v, key_list + [k])
                 return cfg_dict
-
         self_as_dict = convert_to_dict(self, [])
         return yaml.safe_dump(self_as_dict, **kwargs)
 
@@ -407,13 +414,13 @@ class CfgNode(dict):
         Decodes a raw config value (e.g., from a yaml config files or command
         line argument) into a Python object.
 
-        If the value is a dict, it will be interpreted as a new CfgNode.
+        If the value is a raw dict, it will be interpreted as a new CfgNode.
         If the value is a str, it will be evaluated as literals.
         Otherwise it is returned as-is.
         """
         # Configs parsed from raw yaml will contain dictionary keys that need to be
         # converted to CfgNode objects
-        if isinstance(value, dict):
+        if type(value) == dict:
             return cls(value)
         # All remaining processing is only applied to strings
         if not isinstance(value, str):
@@ -463,13 +470,12 @@ def _merge_a_into_b(a, b, root, key_list):
         isinstance(b, CfgNode),
         "`b` (cur type {}) must be an instance of {}".format(type(b), CfgNode),
     )
-
     for k, v_ in a.items():
         full_key = ".".join(key_list + [k])
 
         v = copy.deepcopy(v_)
         v = b._decode_cfg_value(v)
-
+        
         if k in b:
             v = _check_and_coerce_cfg_value_type(v, b[k], k, full_key)
             # Recursively merge dicts
@@ -479,9 +485,10 @@ def _merge_a_into_b(a, b, root, key_list):
                 except BaseException:
                     raise
             else:
-                b[k] = v
+                b.__setattr__(k, v)
+                
         elif b.is_new_allowed():
-            b[k] = v
+            b.__setattr__(k, v)
         else:
             if root.key_is_deprecated(full_key):
                 continue
@@ -496,6 +503,9 @@ def _check_and_coerce_cfg_value_type(replacement, original, key, full_key):
     the right type. The type is correct if it matches exactly or is one of a few
     cases in which the type can be easily coerced.
     """
+    if isinstance(replacement, CfgNode) and isinstance(original, CfgNode):
+        return replacement
+    
     original_type = type(original)
     replacement_type = type(replacement)
 
