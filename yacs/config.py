@@ -504,7 +504,7 @@ def _check_and_coerce_cfg_value_type(replacement, original, key, full_key):
     cases in which the type can be easily coerced.
     """
     if isinstance(replacement, CfgNode) and isinstance(original, CfgNode):
-        return replacement
+        return type(original)(dict(replacement))
     
     original_type = type(original)
     replacement_type = type(replacement)
