@@ -42,21 +42,23 @@ for all options.*
 # my_project/config.py
 from yacs.config import CfgNode as CN
 
+class SystemArgs(CN):
+    # Number of GPUS to use in the experiment
+    NUM_GPUS = 8
+    # Number of workers for doing things
+    NUM_WORKERS = 4
 
-_C = CN()
+class TrainArgs(CN):
+    # A very important hyperparameter
+    HYPERPARAMETER_1 = 0.1
+    # The all important scales for the stuff
+    SCALES = (2, 4, 8, 16)
 
-_C.SYSTEM = CN()
-# Number of GPUS to use in the experiment
-_C.SYSTEM.NUM_GPUS = 8
-# Number of workers for doing things
-_C.SYSTEM.NUM_WORKERS = 4
+class RootNode(CN):
+    SYSTEM = SystemArgs()
+    TRAIN = TrainArgs()
 
-_C.TRAIN = CN()
-# A very important hyperparameter
-_C.TRAIN.HYPERPARAMETER_1 = 0.1
-# The all important scales for the stuff
-_C.TRAIN.SCALES = (2, 4, 8, 16)
-
+_C = RootNode()
 
 def get_cfg_defaults():
   """Get a yacs CfgNode object with default values for my_project."""
